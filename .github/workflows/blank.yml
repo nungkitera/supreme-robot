@@ -1,0 +1,92 @@
+name: Docker Forensic Analysis
+
+on:
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tree
+
+      - name: Pull Docker Image
+        run: |
+          docker pull dotaja/jokowi-dotaja:v1
+
+      - name: Create Container (NO RUN)
+        run: |
+          docker create --name forensic dotaja/jokowi-dotaja:v1
+
+      - name: Export Full Filesystem
+        run: |
+          mkdir -p dump
+          docker export forensic | tar -xvf - -C dump
+
+      - name: Show Structure
+        run: |
+          echo "===== FILE TREE ====="
+          tree -L 3 dump || true
+
+      - name: Find Interesting Files
+        run: |
+          echo "===== PY FILES ====="
+          find dump -name "*.py" || true
+
+          echo "===== SHELL FILES ====="
+          find dump -name "*.sh" || true
+
+          echo "===== CONFIG FILES ====="
+          find dump \( -name "*.json" -o -name "*.env" -o -name "*.yaml" \) || true
+
+      - name: Dump Python Scripts (IMPORTANT)
+        run: |
+          for file in $(find dump -name "*.py" 2>/dev/null); do
+            echo "=============================="
+            echo "FILE: $file"
+            echo "=============================="
+            sed -n '1,300p' "$file" || true
+            echo ""
+          done
+
+      - name: Search Suspicious Keywords
+        run: |
+          echo "===== SEARCH DOMAIN ====="
+          grep -r "http" dump || true
+
+          echo "===== SEARCH PANEL ====="
+          grep -r "qzz.io" dump || true
+
+          echo "===== SEARCH REQUESTS ====="
+          grep -r "requests" dump || true
+
+          echo "===== SEARCH SELENIUM ====="
+          grep -r "selenium" dump || true
+
+      - name: Extract /app specifically
+        run: |
+          echo "===== /app CONTENT ====="
+          ls -lah dump/app || true
+
+          for f in dump/app/*; do
+            echo "---- $f ----"
+            sed -n '1,300p' "$f" || true
+          done
+
+      - name: Strings scan (binary analysis)
+        run: |
+          echo "===== STRINGS SCAN ====="
+          find dump -type f -exec strings {} \; | grep -i "http" | head -n 200 || true
+
+      - name: Cleanup container
+        run: |
+          docker rm forensic || true
+
+      - name: Upload Full Dump
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-full-dump
+          path: dump
