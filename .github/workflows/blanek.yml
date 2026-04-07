@@ -1,0 +1,124 @@
+name: Deep Docker Forensic
+
+on:
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tree
+
+      - name: Pull Image
+        run: |
+          docker pull dotaja/jokowi-dotaja:v1
+
+      - name: Create Container
+        run: |
+          docker create --name forensic dotaja/jokowi-dotaja:v1
+
+      - name: Export Filesystem
+        run: |
+          mkdir -p dump
+          docker export forensic | tar -xvf - -C dump
+
+      # =========================
+      # 🔍 FOKUS /app
+      # =========================
+      - name: Inspect /app
+        run: |
+          echo "===== /app STRUCTURE ====="
+          tree dump/app || true
+
+          echo "===== /app FILE LIST ====="
+          ls -lah dump/app || true
+
+      # =========================
+      # 🔍 SCRIPT UTAMA
+      # =========================
+      - name: Dump Core Scripts
+        run: |
+          for f in agent.py login.py loop.py modul_bot.py; do
+            echo "=============================="
+            echo "FILE: /app/$f"
+            echo "=============================="
+            sed -n '1,400p' dump/app/$f || true
+            echo ""
+          done
+
+      # =========================
+      # 📂 FRESH DATA (INI PENTING)
+      # =========================
+      - name: Inspect fresh_data
+        run: |
+          echo "===== /app/fresh_data ====="
+          ls -lah dump/app/fresh_data || true
+
+      # =========================
+      # 🔗 RESOLVE SYMLINK FILE
+      # =========================
+      - name: Dump Important Data Files
+        run: |
+          FILES="email.txt link.txt history_sukses.txt mapping_profil.txt bot_log.txt"
+
+          for f in $FILES; do
+            echo "=============================="
+            echo "FILE: $f (resolved)"
+            echo "=============================="
+
+            TARGET="dump/app/$f"
+
+            # resolve symlink
+            if [ -L "$TARGET" ]; then
+              REAL=$(readlink -f "$TARGET")
+            else
+              REAL="$TARGET"
+            fi
+
+            echo "REAL PATH: $REAL"
+            echo "------ CONTENT ------"
+            sed -n '1,300p' "$REAL" 2>/dev/null || echo "(empty / not found)"
+            echo ""
+          done
+
+      # =========================
+      # 🔍 SEARCH EMAIL & LINK
+      # =========================
+      - name: Search Emails & URLs
+        run: |
+          echo "===== EMAIL FOUND ====="
+          grep -rE "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+" dump || true
+
+          echo "===== URL FOUND ====="
+          grep -rE "http[s]?://" dump || true
+
+      # =========================
+      # 🔬 EXTRA: LOG & HISTORY
+      # =========================
+      - name: Dump History & Logs
+        run: |
+          echo "===== HISTORY SUKSES ====="
+          sed -n '1,300p' dump/app/fresh_data/history_sukses.txt || true
+
+          echo "===== BOT LOG ====="
+          sed -n '1,300p' dump/app/fresh_data/bot_log.txt || true
+
+      # =========================
+      # 🧹 CLEANUP
+      # =========================
+      - name: Cleanup
+        run: |
+          docker rm forensic || true
+
+      # =========================
+      # 📦 DOWNLOAD RESULT
+      # =========================
+      - name: Upload Dump
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-deep-dump
+          path: dump
