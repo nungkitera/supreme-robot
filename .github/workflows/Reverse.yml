@@ -1,0 +1,51 @@
+name: Reverse
+
+on:
+  workflow_dispatch:
+
+jobs:
+  reverse:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🐳 Pull Image
+        run: docker pull dotaja/ghost-dot-app:latest
+
+      - name: 📦 Create Container
+        run: docker create --name ghost dotaja/ghost-dot-app:latest
+
+      - name: 📂 Extract Filesystem
+        run: |
+          mkdir ghost-files
+          docker cp ghost:/ ./ghost-files
+
+      - name: 🔍 Show Structure
+        run: |
+          echo "===== ROOT ====="
+          ls -la ghost-files
+          echo "===== APP ====="
+          ls -la ghost-files/app || true
+          echo "===== PY FILES ====="
+          find ghost-files -name "*.py"
+
+      - name: 📄 Dump Important Code
+        run: |
+          echo "===== MAIN.PY ====="
+          cat ghost-files/app/main.py || true
+
+          echo "===== AGENT.PY ====="
+          cat ghost-files/app/agent.py || true
+
+      - name: 🧠 Inspect Entrypoint
+        run: |
+          docker inspect dotaja/ghost-dot-app:latest | grep -i -E "entrypoint|cmd"
+
+      - name: ⚙️ Simulate Run
+        run: |
+          docker run --rm dotaja/ghost-dot-app:latest ps aux || true
+
+      - name: 📤 Upload Filesystem
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghost-full
+          path: ghost-files
